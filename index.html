@@ -1,32 +1,58 @@
-<video id="video" autoplay playsinline class="absolute inset-0 w-full h-full object-cover -z-10 opacity-30" style="filter: invert(1) grayscale(1)"></video>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EchoBound - Detector</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { background: #050505; color: #00ff41; font-family: monospace; overflow: hidden; }
+        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: invert(1) grayscale(1); z-index: -1; }
+    </style>
+</head>
+<body class="flex flex-col items-center justify-center h-screen text-center">
 
-<script>
-    async function startMedia() {
-        try {
-            // Acceso a Cámara
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            document.getElementById('video').srcObject = stream;
-            
-            // Configurar análisis de audio
-            const audioContext = new AudioContext();
-            const source = audioContext.createMediaStreamSource(stream);
-            const analyser = audioContext.createAnalyser();
-            source.connect(analyser);
-            
-            // Bucle de detección de "psicofonías"
-            const dataArray = new Uint8Array(analyser.frequencyBinCount);
-            setInterval(() => {
-                analyser.getByteFrequencyData(dataArray);
-                let sum = dataArray.reduce((a, b) => a + b);
-                if (sum > 5000) { // Umbral de "ruido"
-                    const log = document.createElement('div');
-                    log.innerText = `[${new Date().toLocaleTimeString()}] PICO DE FRECUENCIA DETECTADO`;
-                    document.body.appendChild(log);
-                }
-            }, 1000);
-            
-        } catch (err) {
-            console.error("Error al acceder a sensores:", err);
-        }
-    }
-</script>
+    <video id="video" autoplay playsinline></video>
+
+    <h1 class="text-3xl font-bold mb-4">ECHOBOUND SCANNER</h1>
+    
+    <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-colors">
+        <span id="emf-value" class="text-2xl font-bold">0.00 μT</span>
+    </div>
+
+    <button id="btn" class="bg-green-900 border border-green-500 px-8 py-4 text-xl font-bold">INICIAR ESCANEO</button>
+
+    <div id="logs" class="mt-4 text-xs h-24 overflow-y-auto w-80 border-t border-green-900 pt-2"></div>
+
+    <script>
+        const btn = document.getElementById('btn');
+        const video = document.getElementById('video');
+        const emfDisplay = document.getElementById('emf-value');
+        const radar = document.getElementById('radar');
+        const logs = document.getElementById('logs');
+
+        btn.addEventListener('click', async () => {
+            try {
+                // Solicitar acceso a cámara y micro
+                const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                video.srcObject = stream;
+                btn.style.display = 'none'; // Ocultar botón al iniciar
+                
+                // Simulación de EMF
+                setInterval(() => {
+                    const val = (Math.random() * 50).toFixed(2);
+                    emfDisplay.innerText = `${val} μT`;
+                    if(val > 30) {
+                        radar.classList.add('border-red-500');
+                        logs.innerHTML += `<div>[${new Date().toLocaleTimeString()}] ANOMALÍA: ${val} μT</div>`;
+                    } else {
+                        radar.classList.remove('border-red-500');
+                    }
+                }, 1000);
+            } catch (err) {
+                alert("Error: Debes aceptar los permisos de cámara y micrófono.");
+            }
+        });
+    </script>
+</body>
+</html>
