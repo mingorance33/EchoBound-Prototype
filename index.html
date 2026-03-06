@@ -9,11 +9,26 @@
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
+        
+        /* Estilos para la sombra animada */
+        #shadow {
+            position: fixed;
+            width: 150px;
+            height: 150px;
+            background-color: rgba(0, 0, 0, 0.6); /* Color negro translúcido */
+            border-radius: 50%; /* Forma circular sutil */
+            filter: blur(25px); /* Desenfoque para un efecto más natural */
+            z-index: 5; /* Asegurar que la sombra se vea sobre el video */
+            display: none; /* Ocultar por defecto */
+            pointer-events: none; /* Evitar que la sombra interfiera con los clics */
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center h-screen text-center">
 
     <video id="video" autoplay playsinline></video>
+    
+    <div id="shadow"></div>
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
 
@@ -44,12 +59,47 @@
         const emfDisplay = document.getElementById('emf-value');
         const radar = document.getElementById('radar');
         const logs = document.getElementById('logs');
+        const shadow = document.getElementById('shadow'); // Referencia al elemento de sombra
 
         let scanning = false;
         let stream = null;
         let timer = null;
 
         btnHelp.addEventListener('click', () => document.getElementById('help-modal').style.display = 'flex');
+
+        // Función para mostrar y mover la sombra de forma aleatoria
+        function showRandomShadow() {
+            if (!scanning) return; // No mostrar sombra si no se está escaneando
+
+            // Posición inicial aleatoria fuera de la pantalla
+            const startX = Math.random() < 0.5 ? -200 : window.innerWidth + 200;
+            const startY = Math.random() * window.innerHeight;
+
+            // Posición final aleatoria fuera de la pantalla
+            const endX = startX < 0 ? window.innerWidth + 200 : -200;
+            const endY = Math.random() * window.innerHeight;
+
+            // Establecer la posición inicial y mostrar la sombra
+            shadow.style.left = `${startX}px`;
+            shadow.style.top = `${startY}px`;
+            shadow.style.display = 'block';
+
+            // Animar el movimiento de la sombra
+            const duration = 2000 + Math.random() * 3000; // Duración aleatoria del movimiento
+            shadow.animate([
+                { left: `${startX}px`, top: `${startY}px` },
+                { left: `${endX}px`, top: `${endY}px` }
+            ], {
+                duration: duration,
+                easing: 'ease-in-out'
+            }).onfinish = () => {
+                shadow.style.display = 'none'; // Ocultar la sombra al finalizar el movimiento
+                
+                // Programar la próxima aparición de la sombra (entre 5 y 15 segundos)
+                const nextShadowDelay = 5000 + Math.random() * 10000;
+                setTimeout(showRandomShadow, nextShadowDelay);
+            };
+        }
 
         btn.addEventListener('click', async () => {
             if (!scanning) {
@@ -61,6 +111,9 @@
                     video.srcObject = stream;
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
+
+                    // Iniciar la aparición aleatoria de la sombra
+                    showRandomShadow();
 
                     timer = setInterval(() => {
                         const val = (Math.random() * 50).toFixed(2);
@@ -80,6 +133,7 @@
                 btn.innerText = "INICIAR ESCANEO";
                 scanning = false;
                 radar.classList.remove('radar-active');
+                shadow.style.display = 'none'; // Asegurar que la sombra se oculte al detener
             }
         });
     </script>
