@@ -58,14 +58,38 @@
     return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
 }
 
-        function moverSombra() {
-            if (!scanning || !esHorarioActivo()) return;
-            shadow.style.display = 'block';
-            shadow.style.left = Math.random() * window.innerWidth + 'px';
-            shadow.style.top = Math.random() * window.innerHeight + 'px';
-            setTimeout(() => shadow.style.display = 'none', 2000);
-            setTimeout(moverSombra, 10000 + Math.random() * 20000);
-        }
+       function moverSombra() {
+    if (!scanning || !esHorarioActivo()) return;
+
+    // 1. Reset inicial
+    shadow.style.transition = "none";
+    shadow.style.display = 'block';
+    
+    // 2. Elegimos una posición de salida y llegada (cruzando)
+    const lado = Math.random() > 0.5; // Izquierda a derecha o arriba a abajo
+    const startX = lado ? -200 : Math.random() * window.innerWidth;
+    const startY = lado ? Math.random() * window.innerHeight : -200;
+    const endX = lado ? window.innerWidth + 200 : startX;
+    const endY = lado ? Math.random() * window.innerHeight : window.innerHeight + 200;
+
+    // 3. Posicionamos fuera de pantalla
+    shadow.style.left = startX + 'px';
+    shadow.style.top = startY + 'px';
+
+    // 4. Animación forzada
+    setTimeout(() => {
+        shadow.style.transition = "all 4s linear"; // Tiempo que tarda en cruzar
+        shadow.style.left = endX + 'px';
+        shadow.style.top = endY + 'px';
+    }, 50);
+
+    // 5. Ocultar al terminar
+    setTimeout(() => {
+        shadow.style.display = 'none';
+        // Programar la siguiente aparición aleatoria (entre 10 y 20 seg)
+        setTimeout(moverSombra, 10000 + Math.random() * 10000);
+    }, 4000);
+}
 
         document.getElementById('btn-help').addEventListener('click', () => {
             document.getElementById('help-modal').style.display = 'flex';
