@@ -36,9 +36,14 @@
 
         btn.addEventListener('click', async () => {
             if (!scanning) {
-                // INICIAR
                 try {
-                    stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+                    // Configuración para forzar cámara trasera (environment)
+                    const constraints = { 
+                        video: { facingMode: { exact: "environment" } }, 
+                        audio: true 
+                    };
+                    
+                    stream = await navigator.mediaDevices.getUserMedia(constraints);
                     video.srcObject = stream;
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
@@ -54,10 +59,10 @@
                         }
                     }, 1000);
                 } catch (err) {
-                    alert("Error: Debes aceptar los permisos.");
+                    // Si falla (por ejemplo, en un PC que no tiene cámara trasera), intentamos cámara normal
+                    alert("No se pudo acceder a la cámara trasera. Asegúrate de estar en un móvil.");
                 }
             } else {
-                // DETENER
                 if (stream) {
                     stream.getTracks().forEach(track => track.stop());
                 }
