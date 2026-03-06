@@ -52,10 +52,11 @@
         }
         cargarConfig();
 
-        function esHorarioActivo() {
-            const h = new Date().getHours();
-            return h >= config.horaInicio && h <= config.horaFin;
-        }
+       function esHorarioActivo() {
+    const ahora = new Date();
+    const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
+    return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
+}
 
         function moverSombra() {
             if (!scanning || !esHorarioActivo()) return;
