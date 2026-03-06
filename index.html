@@ -58,37 +58,42 @@
     return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
 }
 
-       function moverSombra() {
+      function moverSombra() {
     if (!scanning || !esHorarioActivo()) return;
 
-    // 1. Reset inicial
+    // 1. Definimos los posibles puntos de entrada/salida (bordes)
+    const puntos = [
+        { x: -200, y: Math.random() * window.innerHeight }, // Izquierda
+        { x: window.innerWidth + 200, y: Math.random() * window.innerHeight }, // Derecha
+        { x: Math.random() * window.innerWidth, y: -200 }, // Arriba
+        { x: Math.random() * window.innerWidth, y: window.innerHeight + 200 } // Abajo
+    ];
+
+    // 2. Elegimos al azar un punto de origen y uno de destino (que no sea el mismo lado)
+    let inicio = puntos[Math.floor(Math.random() * puntos.length)];
+    let destino = puntos[Math.floor(Math.random() * puntos.length)];
+    
+    // Aseguramos que no sea el mismo punto para que siempre haya movimiento
+    while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
+
+    // 3. Aplicamos estilo inicial
     shadow.style.transition = "none";
     shadow.style.display = 'block';
-    
-    // 2. Elegimos una posición de salida y llegada (cruzando)
-    const lado = Math.random() > 0.5; // Izquierda a derecha o arriba a abajo
-    const startX = lado ? -200 : Math.random() * window.innerWidth;
-    const startY = lado ? Math.random() * window.innerHeight : -200;
-    const endX = lado ? window.innerWidth + 200 : startX;
-    const endY = lado ? Math.random() * window.innerHeight : window.innerHeight + 200;
+    shadow.style.left = inicio.x + 'px';
+    shadow.style.top = inicio.y + 'px';
 
-    // 3. Posicionamos fuera de pantalla
-    shadow.style.left = startX + 'px';
-    shadow.style.top = startY + 'px';
-
-    // 4. Animación forzada
+    // 4. Animación fluida
     setTimeout(() => {
-        shadow.style.transition = "all 4s linear"; // Tiempo que tarda en cruzar
-        shadow.style.left = endX + 'px';
-        shadow.style.top = endY + 'px';
+        shadow.style.transition = `all ${4 + Math.random() * 4}s linear`; // Duración variable para más realismo
+        shadow.style.left = destino.x + 'px';
+        shadow.style.top = destino.y + 'px';
     }, 50);
 
-    // 5. Ocultar al terminar
+    // 5. Ocultar y reprogramar
     setTimeout(() => {
         shadow.style.display = 'none';
-        // Programar la siguiente aparición aleatoria (entre 10 y 20 seg)
-        setTimeout(moverSombra, 10000 + Math.random() * 10000);
-    }, 4000);
+        setTimeout(moverSombra, 8000 + Math.random() * 12000); // Intervalo variable
+    }, 8000); // Debe ser mayor al tiempo de la transición
 }
 
         document.getElementById('btn-help').addEventListener('click', () => {
