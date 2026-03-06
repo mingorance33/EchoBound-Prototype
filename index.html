@@ -3,30 +3,37 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EchoBound - Pro</title>
+    <title>EchoBound - Localizador PRO</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
-        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; filter: invert(1) grayscale(1) contrast(1.2); z-index: -1; }
-        .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 20px #ff0000; color: #ff0000; }
+        body { background: #010101; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
+        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; transition: filter 0.3s; }
+        .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; text-shadow: 0 0 10px #ff0000; }
+        #static-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: url('data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAQAAAAECAYAAACp8Z5+AAAAIklEQVQIW2NkQAKrVq36z8gAFWPAAVAFKMoAVQAVYAAVYAAVYAAVfQf+Y9/VAAAAAElFTkSuQmCC'); opacity: 0.05; pointer-events: none; z-index: 0; }
+        @keyframes pulse { 0% { opacity: 0.5; } 50% { opacity: 1; } 100% { opacity: 0.5; } }
+        .scanning-text { animation: pulse 1.5s infinite; }
     </style>
 </head>
 <body class="flex flex-col items-center justify-start h-screen pt-10">
 
     <video id="video" autoplay playsinline></video>
+    <div id="static-overlay"></div>
 
-    <button id="btn" class="bg-green-900 border-2 border-green-500 px-8 py-3 text-lg font-bold mb-8 hover:bg-green-800 z-10 transition-all">
-        INICIAR ESCANEO
+    <button id="btn" class="bg-black/80 border-2 border-green-500 px-10 py-3 text-lg font-bold mb-8 hover:bg-green-900 transition-all z-10 shadow-[0_0_15px_rgba(0,255,65,0.5)]">
+        INICIAR PROTOCOLO
     </button>
 
-    <h1 class="text-3xl font-bold mb-6">ECHOBOUND</h1>
+    <h1 class="text-3xl font-bold mb-6 tracking-widest scanning-text">ECHOBOUND v2.1</h1>
     
-    <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center transition-all duration-300">
-        <span id="emf-value" class="text-3xl font-bold">0.00 μT</span>
+    <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex flex-col items-center justify-center transition-all duration-300 bg-black/40 backdrop-blur-sm relative overflow-hidden">
+        <div class="absolute inset-0 opacity-10" style="background: radial-gradient(circle, #00ff41 0%, transparent 70%);"></div>
+        <span class="text-xs text-green-700">CAMPO EMF</span>
+        <span id="emf-value" class="text-4xl font-bold z-10">0.00 <span class="text-xl">μT</span></span>
+        <span id="status-text" class="text-xs mt-2 text-green-600 z-10">CALIBRANDO...</span>
     </div>
 
-    <div id="logs" class="mt-8 text-xs h-32 overflow-y-auto w-80 border border-green-900 p-2 bg-black/50">
-        > Sistema en espera...
+    <div id="logs" class="mt-8 text-xs h-32 overflow-y-auto w-80 border border-green-900 p-2 bg-black/70 backdrop-blur-sm shadow-inner">
+        > Esperando autorización de hardware...
     </div>
 
     <script>
@@ -35,51 +42,123 @@
         const emfDisplay = document.getElementById('emf-value');
         const radar = document.getElementById('radar');
         const logs = document.getElementById('logs');
+        const statusText = document.getElementById('status-text');
         
         let scanning = false;
         let interval;
-        let currentStream = null; // Variable para controlar la cámara/micro
+        let currentStream = null;
+        let audioCtx = null;
+        let lastClickTime = 0;
+
+        // Frases narrativas para los logs
+        const narratives = [
+            "Fluctuación térmica detectada.",
+            "Anomalía magnética residual.",
+            "Posible registro psicofónico en frecuencia baja.",
+            "Interferencia estática no identificada.",
+            "Patrón de energía coherente localizado.",
+            "Ecos residuales de evento pasado."
+        ];
+
+        // Función para el sonido de clic (Geiger)
+        function playGeigerClick() {
+            if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            const oscillator = audioCtx.createOscillator();
+            const gainNode = audioCtx.createGain();
+            oscillator.type = 'sine';
+            oscillator.frequency.setValueAtTime(150, audioCtx.currentTime); // Frecuencia baja para el 'clic'
+            gainNode.gain.setValueAtTime(0.3, audioCtx.currentTime);
+            gainNode.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.01);
+            oscillator.connect(gainNode);
+            gainNode.connect(audioCtx.destination);
+            oscillator.start();
+            oscillator.stop(audioCtx.currentTime + 0.01);
+        }
 
         btn.addEventListener('click', async () => {
             if (!scanning) {
-                // INICIAR
                 try {
                     const stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: { exact: "environment" } }, 
-                        audio: true 
+                        video: { facingMode: "environment" }, 
+                        audio: false // Desactivamos micro para simplificar y evitar feedback
                     });
                     currentStream = stream;
                     video.srcObject = stream;
                     
-                    logs.innerHTML = ''; // Limpiar logs al iniciar
-                    btn.innerText = "DETENER ESCANEO";
+                    logs.innerHTML = '> Protocolo iniciado. Buscando resonancia...<br>';
+                    btn.innerText = "ABORTAR PROTOCOLO";
+                    btn.classList.add('border-red-500', 'text-red-500');
                     scanning = true;
+                    statusText.innerText = "ESCANEO ACTIVO";
                     
+                    let baseValue = 10;
+
                     interval = setInterval(() => {
-                        const val = (Math.random() * 50).toFixed(2);
-                        emfDisplay.innerText = `${val} μT`;
+                        // LÓGICA DE LOCALIZACIÓN:
+                        // 1. Simular quietud: Si el usuario no mueve el móvil, la probabilidad de encontrar algo sube.
+                        // Usamos un factor de "suerte" que aumenta con el tiempo si no se detiene el escaneo.
+                        baseValue += (Math.random() - 0.45) * 2; // Deriva lenta
+                        if(baseValue < 5) baseValue = 5;
+                        if(baseValue > 25) baseValue = 25; // Nivel base
+
+                        // 2. El "Pico de Localización": Rara vez ocurre un pico fuerte.
+                        let finalValue = baseValue;
+                        if(Math.random() > 0.93) { // 7% de probabilidad de pico
+                            finalValue = (Math.random() * 30 + 35).toFixed(2); // Entre 35 y 65
+                        } else {
+                            finalValue = (baseValue + Math.random() * 5).toFixed(2);
+                        }
                         
-                        if(val > 35) {
+                        emfDisplay.innerHTML = `${finalValue} <span class="text-xl">μT</span>`;
+                        
+                        // Sonido Geiger: Más rápido cuanto mayor sea el valor
+                        const clickDelay = Math.max(50, 1000 - (finalValue * 15));
+                        if(Date.now() - lastClickTime > clickDelay) {
+                            playGeigerClick();
+                            lastClickTime = Date.now();
+                        }
+
+                        // Reacción visual y háptica
+                        if(finalValue > 38) {
                             radar.classList.add('radar-active');
-                            logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ALERTA: ${val} μT</div>` + logs.innerHTML;
+                            video.style.filter = "grayscale(1) contrast(2) blur(2px) invert(1)"; // Distorsión visual fuerte
+                            
+                            // Vibración háptica (latido doble)
+                            if (navigator.vibrate) navigator.vibrate([100, 50, 100]);
+                            
+                            statusText.innerText = "¡ANOMALÍA DETECTADA!";
+                            
+                            const randomNarrative = narratives[Math.floor(Math.random() * narratives.length)];
+                            logs.innerHTML = `<div class="text-red-400">[${new Date().toLocaleTimeString()}] ALERTA CRÍTICA: ${finalValue} μT. ${randomNarrative}</div>` + logs.innerHTML;
+                        
+                        } else if (finalValue > 28) {
+                            radar.classList.remove('radar-active');
+                            video.style.filter = "grayscale(1) contrast(1.5) blur(1px)"; // Distorsión suave
+                            statusText.innerText = "ACTIVIDAD ELEVADA";
                         } else {
                             radar.classList.remove('radar-active');
+                            video.style.filter = "grayscale(1) contrast(1.2)"; // Estado normal
+                            statusText.innerText = "ESCANEO ACTIVO";
                         }
-                    }, 800);
+                    }, 600);
                 } catch (err) {
-                    alert("Cámara trasera no encontrada o permisos denegados.");
+                    alert("Error: Se requiere cámara trasera y HTTPS para el protocolo.");
+                    console.error(err);
                 }
             } else {
                 // DETENER
                 if (currentStream) {
-                    currentStream.getTracks().forEach(track => track.stop()); // Apagar cámara y micro
+                    currentStream.getTracks().forEach(track => track.stop());
                 }
                 clearInterval(interval);
                 video.srcObject = null;
-                btn.innerText = "INICIAR ESCANEO";
-                emfDisplay.innerText = "0.00 μT";
+                video.style.filter = "grayscale(1) contrast(1.5)"; // Reset filtro
+                btn.innerText = "INICIAR PROTOCOLO";
+                btn.classList.remove('border-red-500', 'text-red-500');
+                emfDisplay.innerHTML = `0.00 <span class="text-xl">μT</span>`;
                 radar.classList.remove('radar-active');
-                logs.innerHTML = '> Escaneo detenido.';
+                logs.innerHTML = '> Protocolo abortado. Datos purgados.<br>' + logs.innerHTML;
+                statusText.innerText = "SISTEMA EN ESPERA";
                 scanning = false;
             }
         });
