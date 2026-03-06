@@ -8,14 +8,14 @@
     <style>
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.4; filter: invert(1) grayscale(1) contrast(1.2); z-index: -1; }
-        .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 20px #ff0000; }
+        .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 20px #ff0000; color: #ff0000; }
     </style>
 </head>
 <body class="flex flex-col items-center justify-start h-screen pt-10">
 
     <video id="video" autoplay playsinline></video>
 
-    <button id="btn" class="bg-green-900 border-2 border-green-500 px-8 py-3 text-lg font-bold mb-8 hover:bg-green-800 z-10">
+    <button id="btn" class="bg-green-900 border-2 border-green-500 px-8 py-3 text-lg font-bold mb-8 hover:bg-green-800 z-10 transition-all">
         INICIAR ESCANEO
     </button>
 
@@ -26,7 +26,7 @@
     </div>
 
     <div id="logs" class="mt-8 text-xs h-32 overflow-y-auto w-80 border border-green-900 p-2 bg-black/50">
-        > Esperando calibración...
+        > Sistema en espera...
     </div>
 
     <script>
@@ -38,19 +38,22 @@
         
         let scanning = false;
         let interval;
+        let currentStream = null; // Variable para controlar la cámara/micro
 
         btn.addEventListener('click', async () => {
-            scanning = !scanning;
-            
-            if (scanning) {
+            if (!scanning) {
+                // INICIAR
                 try {
-                    // Forzar cámara trasera (environment)
                     const stream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: { exact: "environment" } }, 
                         audio: true 
                     });
+                    currentStream = stream;
                     video.srcObject = stream;
+                    
+                    logs.innerHTML = ''; // Limpiar logs al iniciar
                     btn.innerText = "DETENER ESCANEO";
+                    scanning = true;
                     
                     interval = setInterval(() => {
                         const val = (Math.random() * 50).toFixed(2);
@@ -64,12 +67,20 @@
                         }
                     }, 800);
                 } catch (err) {
-                    alert("Cámara trasera no detectada o permisos denegados.");
+                    alert("Cámara trasera no encontrada o permisos denegados.");
                 }
             } else {
+                // DETENER
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop()); // Apagar cámara y micro
+                }
                 clearInterval(interval);
+                video.srcObject = null;
                 btn.innerText = "INICIAR ESCANEO";
+                emfDisplay.innerText = "0.00 μT";
                 radar.classList.remove('radar-active');
+                logs.innerHTML = '> Escaneo detenido.';
+                scanning = false;
             }
         });
     </script>
