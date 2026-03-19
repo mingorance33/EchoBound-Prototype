@@ -11,7 +11,7 @@
         #ghost-face {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             max-width: 80%; opacity: 0; z-index: 10; pointer-events: none;
-            transition: opacity 2s ease-in-out;
+            transition: opacity 1.5s ease-in-out; /* Transición un poco más rápida para la prueba */
             filter: grayscale(0.5) contrast(1.2) brightness(0.9);
         }
         #ghost-face.show { opacity: 0.7; }
@@ -58,13 +58,16 @@
             logs.insertBefore(div, logs.firstChild);
         }
 
-        // --- PASO 1: PEDIR PERMISO DE CÁMARA ---
+        // --- ARREGLO DEL FALLO: PETICIONES SECUENCIALES ---
+
+        // PASO 1: PEDIR PERMISO DE CÁMARA (Sin Audio)
         async function pedirCamara() {
             try {
                 addLog("Solicitando cámara...", "#ffff33");
+                // Petición exclusiva de video para no bloquear el móvil
                 stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment" }, 
-                    audio: false // No pedimos audio aquí para evitar bloqueos
+                    audio: false 
                 });
                 video.srcObject = stream;
                 await video.play();
@@ -76,12 +79,12 @@
             } catch (err) {
                 addLog("ERROR CÁMARA: " + err.name, "#ff3333");
                 btn.innerText = "REINTENTAR";
-                scanning = false;
+                scanning = false; // Permitir reintentar
                 alert("Debes permitir el acceso a la cámara para el escaneo visual.");
             }
         }
 
-        // --- PASO 2: PEDIR PERMISO DE MICRÓFONO ---
+        // PASO 2: PEDIR PERMISO DE MICRÓFONO (Secuencialmente)
         async function pedirMicrofono() {
             try {
                 addLog("Solicitando micrófono...", "#ffff33");
@@ -126,13 +129,14 @@
                 addLog("VOZ: Procesando...");
                 if (text.includes("pericot")) {
                     addLog("ANOMALÍA DETECTADA: Pericot", "#ffff00");
-                    setTimeout(() => {
-                        if (scanning) {
-                            addLog("MANIFESTACIÓN VISUAL", "#ff0000");
-                            ghostFace.classList.add('show');
-                            setTimeout(() => ghostFace.classList.remove('show'), 5000);
-                        }
-                    }, 10000); // 10 segundos
+                    
+                    // --- ARREGLO DE PRUEBA: SIN RETRASO ---
+                    // Se ejecuta instantáneamente
+                    if (scanning) {
+                        addLog("MANIFESTACIÓN VISUAL", "#ff0000");
+                        ghostFace.classList.add('show');
+                        setTimeout(() => ghostFace.classList.remove('show'), 5000);
+                    }
                 }
             };
 
@@ -162,10 +166,13 @@
 
         btn.addEventListener('click', () => {
             if (!scanning) {
-                scanning = true; // Prevenimos múltiples pulsaciones
-                pedirCamara(); // Iniciamos la cadena de permisos secuenciales
+                // Prevenimos múltiples pulsaciones rápidas
+                if (btn.innerText === "SOLICITANDO...") return;
+                btn.innerText = "SOLICITANDO...";
+                // Iniciamos la cadena secuencial de permisos
+                pedirCamara();
             } else {
-                // Para detener, recargamos la página. Es lo más fiable en móvil.
+                // Para detener en móvil, lo más fiable es recargar la página
                 location.reload(); 
             }
         });
