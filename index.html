@@ -3,37 +3,39 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>EchoBound Scanner</title>
+    <title>EchoBound Scanner - Fixed Mobile</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
-        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1); z-index: -1; }
+        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; touch-action: none; }
+        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.2; filter: grayscale(1); z-index: -1; }
         #ghost-face {
             position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
             max-width: 80%; opacity: 0; z-index: 10; pointer-events: none;
             transition: opacity 2s ease-in-out;
+            filter: grayscale(0.5) contrast(1.2) brightness(0.9);
         }
         #ghost-face.show { opacity: 0.7; }
         #logs { font-size: 10px; color: #00ff41; background: rgba(0,0,0,0.8); }
+        .radar-active { border-color: #ff0000 !important; color: #ff0000; box-shadow: 0 0 20px #ff0000; }
     </style>
 </head>
-<body class="flex flex-col items-center justify-center h-screen p-4">
+<body class="flex flex-col items-center justify-center h-screen p-4 text-center">
 
     <video id="video" autoplay playsinline muted></video>
-    <img id="ghost-face" src="rostro.png">
+    <img id="ghost-face" src="rostro.png" alt="Manifestación">
 
-    <h1 class="text-2xl font-bold mb-4">ECHOBOUND SCANNER</h1>
+    <h1 class="text-2xl font-bold mb-4 mt-8">ECHOBOUND SCANNER</h1>
     
-    <div id="radar" class="w-48 h-48 border-4 border-green-500 rounded-full flex items-center justify-center mb-6">
+    <div id="radar" class="w-48 h-48 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-all">
         <span id="emf-value" class="text-2xl font-bold">0.00 μT</span>
     </div>
 
-    <button id="btn" class="bg-green-900 border border-green-500 px-8 py-4 text-xl font-bold z-50 active:bg-green-700">
+    <button id="btn" class="bg-green-900 border border-green-500 px-8 py-4 text-xl font-bold z-50 active:bg-green-700 w-full max-w-xs">
         INICIAR ESCANEO
     </button>
 
-    <div id="logs" class="mt-4 h-32 overflow-y-auto w-full border-t border-green-900 p-2">
-        <div>[SISTEMA] Listo para iniciar...</div>
+    <div id="logs" class="mt-4 h-32 overflow-y-auto w-full max-w-xs border-t border-green-900 p-2 text-left">
+        <div>[SISTEMA] Listo. Pulsa Iniciar...</div>
     </div>
 
     <script>
@@ -41,8 +43,13 @@
         const video = document.getElementById('video');
         const logs = document.getElementById('logs');
         const ghostFace = document.getElementById('ghost-face');
+        const radar = document.getElementById('radar');
+        const emfValue = document.getElementById('emf-value');
+        
         let scanning = false;
+        let stream = null;
         let recognition = null;
+        let emfInterval = null;
 
         function addLog(msg, color = "#00ff41") {
             const div = document.createElement('div');
@@ -51,27 +58,59 @@
             logs.insertBefore(div, logs.firstChild);
         }
 
-        async function startApp() {
+        // --- PASO 1: PEDIR PERMISO DE CÁMARA ---
+        async function pedirCamara() {
             try {
-                addLog("Solicitando permisos...");
-                const stream = await navigator.mediaDevices.getUserMedia({ 
+                addLog("Solicitando cámara...", "#ffff33");
+                stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment" }, 
-                    audio: true 
+                    audio: false // No pedimos audio aquí para evitar bloqueos
                 });
                 video.srcObject = stream;
                 await video.play();
+                addLog("Cámara activa.");
                 
-                scanning = true;
-                btn.innerText = "DETENER ESCANEO";
-                addLog("Cámara y Micro activos.");
-                
-                iniciarVoz();
-                iniciarEMF();
+                // Si la cámara funciona, pasamos al Paso 2
+                pedirMicrofono();
 
             } catch (err) {
-                addLog("ERROR: " + err.name, "#ff3333");
-                alert("Debes permitir el acceso a la cámara y micro.");
+                addLog("ERROR CÁMARA: " + err.name, "#ff3333");
+                btn.innerText = "REINTENTAR";
+                scanning = false;
+                alert("Debes permitir el acceso a la cámara para el escaneo visual.");
             }
+        }
+
+        // --- PASO 2: PEDIR PERMISO DE MICRÓFONO ---
+        async function pedirMicrofono() {
+            try {
+                addLog("Solicitando micrófono...", "#ffff33");
+                // Hacemos una segunda petición, solo de audio
+                const audioStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: false, 
+                    audio: true 
+                });
+                
+                // Añadimos la pista de audio al stream de video existente
+                audioStream.getAudioTracks().forEach(track => stream.addTrack(track));
+                addLog("Micrófono activo.");
+                
+                // Todo listo, iniciamos las funciones de la app
+                finalizarInicio();
+
+            } catch (err) {
+                addLog("WARN: Micrófono denegado.", "#ff3333");
+                addLog("La detección de 'Pericot' no funcionará.", "#ffff33");
+                // Aunque el micro falle, dejamos que la cámara funcione
+                finalizarInicio(); 
+            }
+        }
+
+        function finalizarInicio() {
+            scanning = true;
+            btn.innerText = "DETENER ESCANEO";
+            iniciarVoz();
+            iniciarEMF();
         }
 
         function iniciarVoz() {
@@ -84,36 +123,50 @@
 
             recognition.onresult = (event) => {
                 const text = event.results[event.results.length - 1][0].transcript.toLowerCase();
+                addLog("VOZ: Procesando...");
                 if (text.includes("pericot")) {
-                    addLog("PALABRA DETECTADA: Pericot", "#ffff00");
+                    addLog("ANOMALÍA DETECTADA: Pericot", "#ffff00");
                     setTimeout(() => {
                         if (scanning) {
-                            addLog("MANIFESTACIÓN DETECTADA", "#ff0000");
+                            addLog("MANIFESTACIÓN VISUAL", "#ff0000");
                             ghostFace.classList.add('show');
                             setTimeout(() => ghostFace.classList.remove('show'), 5000);
                         }
-                    }, 10000);
+                    }, 10000); // 10 segundos
                 }
             };
 
             recognition.onend = () => { if(scanning) recognition.start(); };
-            recognition.start();
-            addLog("Escuchando palabra clave...");
+            try {
+                recognition.start();
+                addLog("Escuchando: 'Pericot'...");
+            } catch(e) {
+                // Si denegaron el micro, esto fallará
+                addLog("Voz inactiva (sin micro).", "#ff3333");
+            }
         }
 
         function iniciarEMF() {
-            setInterval(() => {
+            emfInterval = setInterval(() => {
                 if(!scanning) return;
                 const val = (35 + Math.random() * 15).toFixed(2);
-                document.getElementById('emf-value').innerText = val + " μT";
+                emfValue.innerText = val + " μT";
+                
+                if (val > 38) {
+                    radar.classList.add('radar-active');
+                } else {
+                    radar.classList.remove('radar-active');
+                }
             }, 1000);
         }
 
         btn.addEventListener('click', () => {
             if (!scanning) {
-                startApp();
+                scanning = true; // Prevenimos múltiples pulsaciones
+                pedirCamara(); // Iniciamos la cadena de permisos secuenciales
             } else {
-                location.reload(); // Forma más limpia de detener todo en móvil
+                // Para detener, recargamos la página. Es lo más fiable en móvil.
+                location.reload(); 
             }
         });
     </script>
