@@ -2,11 +2,11 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EchoBound - Detector (Modo 24h)</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>EchoBound - Detector Móvil (v24h)</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
+        body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; touch-action: none; }
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
         
@@ -18,67 +18,75 @@
             position: fixed;
             top: 50%;
             left: 50%;
-            transform: translate(-50%, -50%) scale(0.8); /* Centrado, un poco más pequeño al inicio */
-            max-width: 80%; /* No ocupa toda la pantalla */
+            transform: translate(-50%, -50%) scale(0.8);
+            max-width: 80%;
             max-height: 80%;
             opacity: 0;
-            z-index: 10; /* Por encima de todo */
+            z-index: 10;
             pointer-events: none;
-            transition: opacity 2s ease-in-out, transform 3s ease-out; /* Transición suave de aparición */
-            /* El efecto fantasma ya viene en la imagen image_5.png, así que solo ajustamos el brillo/contraste si es necesario */
+            transition: opacity 2s ease-in-out, transform 3s ease-out;
             filter: grayscale(0.5) contrast(1.2) brightness(0.9);
         }
         
         /* Clase que se aplica para mostrarlo */
         #ghost-face.show {
-            opacity: 0.7; /* Un poco transparente */
-            transform: translate(-50%, -50%) scale(1); /* Vuelve a tamaño normal */
+            opacity: 0.7;
+            transform: translate(-50%, -50%) scale(1);
         }
+        
+        /* Estilo para los logs en el móvil */
+        #logs div { border-bottom: 1px solid #003300; padding: 2px 0; }
     </style>
 </head>
-<body class="flex flex-col items-center justify-center h-screen text-center">
+<body class="flex flex-col items-center justify-center h-screen text-center p-4">
 
-    <video id="video" autoplay playsinline></video>
-    <div id="shadow"></div>
+    <video id="video" autoplay playsinline muted></video> <div id="shadow"></div>
     
     <img id="ghost-face" src="rostro.png" alt="Manifestación Espectral">
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
 
     <div id="help-modal" class="hidden absolute inset-0 bg-black/95 z-40 p-6 flex flex-col justify-center text-left">
-        <h2 class="text-xl font-bold text-center mb-4 border-b border-green-500 pb-2">ANATOMÍA DE ECHOBOUND (v24h)</h2>
+        <h2 class="text-xl font-bold text-center mb-4 border-b border-green-500 pb-2">ANATOMÍA DE ECHOBOUND (Móvil)</h2>
         <div class="space-y-4 text-sm font-mono">
             <p><strong>1. Capa de Sensores:</strong> Magnetómetro, LiDAR y audio de alta sensibilidad.</p>
-            <p><strong>2. Procesamiento (IA Local):</strong> Algoritmos de redes neuronales convolucionales activos 24/7.</p>
-            <p><strong>3. Contexto (API):</strong> Integración con registros históricos y geolocalización.</p>
+            <p><strong>2. Procesamiento (IA Local):</strong> Algoritmos activos 24/7.</p>
+            <p><strong>3. Manifestación:</strong> Responde a la palabra clave 'Pericot' tras 10s.</p>
         </div>
         <button onclick="document.getElementById('help-modal').style.display='none'" class="mt-8 w-full py-3 border border-green-500 hover:bg-green-900 font-bold uppercase">CERRAR</button>
     </div>
 
-    <h1 class="text-3xl font-bold mb-4">ECHOBOUND SCANNER</h1>
+    <h1 class="text-3xl font-bold mb-4 mt-12">ECHOBOUND SCANNER</h1>
     <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-all">
         <span id="emf-value" class="text-3xl font-bold">0.00 μT</span>
     </div>
 
-    <button id="btn" class="bg-green-900 border border-green-500 px-10 py-4 text-xl font-bold z-10">INICIAR ESCANEO</button>
-    <div id="logs" class="mt-4 text-xs h-24 overflow-y-auto w-80 border-t border-green-900 pt-2 bg-black/50"></div>
+    <button id="btn" class="bg-green-900 border border-green-500 px-10 py-4 text-xl font-bold z-10 w-full max-w-sm">INICIAR ESCANEO</button>
+    <div id="logs" class="mt-4 text-xs h-32 overflow-y-auto w-full max-w-sm border-t border-green-900 pt-2 bg-black/50 text-left px-2"></div>
 
     <script>
         const btn = document.getElementById('btn');
         const shadow = document.getElementById('shadow');
         const ghostFace = document.getElementById('ghost-face');
         const logs = document.getElementById('logs');
+        const video = document.getElementById('video');
         let scanning = false, stream = null, timer = null;
         
-        // Variables para reconocimiento de voz
         let recognition = null;
         let ghostTimeout = null;
 
-        // --- SE ELIMINA LA FUNCIÓN esHorarioActivo Y LA CARGA DE CONFIG.JSON ---
+        function addLog(message, type = 'info') {
+            const date = new Date().toLocaleTimeString();
+            let color = '#00ff41';
+            if (type === 'error') color = '#ff3333';
+            if (type === 'warn') color = '#ffff33';
+            if (type === 'crit') color = '#ff0000';
+            
+            logs.innerHTML = `<div style="color: ${color}">[${date}] ${message}</div>` + logs.innerHTML;
+        }
 
-        // Función original de movimiento de sombra circular (MODIFICADA para ser independiente del horario)
         function moverSombra() {
-            if (!scanning) return; // Solo verifica si estamos escaneando
+            if (!scanning) return;
 
             const puntos = [
                 { x: -200, y: Math.random() * window.innerHeight },
@@ -109,65 +117,86 @@
             }, 8000);
         }
 
-        // Función para iniciar el reconocimiento de voz
         function iniciarReconocimientoVoz() {
-            if (!('webkitSpeechRecognition' in window)) {
-                logs.innerHTML = `<div>[ERROR] Reconocimiento de voz no soportado.</div>` + logs.innerHTML;
+            // Comprobar compatibilidad específica para móviles
+            const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+            
+            if (!SpeechRecognition) {
+                addLog('ERROR: Detección de voz no compatible con este navegador móvil.', 'error');
+                addLog('Usa Chrome en Android o Safari en iOS actualizado.', 'warn');
                 return;
             }
 
-            recognition = new webkitSpeechRecognition();
+            recognition = new SpeechRecognition();
             recognition.continuous = true;
             recognition.interimResults = false;
             recognition.lang = 'es-ES';
 
             recognition.onresult = (event) => {
                 const result = event.results[event.results.length - 1];
+                if (!result.isFinal) return; // Ignorar resultados intermedios
+                
                 const transcript = result[0].transcript.trim().toLowerCase();
                 
-                logs.innerHTML = `<div>[VOZ] Audio procesado...</div>` + logs.innerHTML;
+                addLog(`VOZ: Procesando audio...`);
 
                 if (transcript.includes('pericot')) {
-                    logs.innerHTML = `<div>[SISTEMA] Palabra clave 'Pericot' detectada.</div>` + logs.innerHTML;
+                    addLog(`SISTEMA: Palabra clave 'Pericot' detectada.`, 'warn');
                     activarEventoFantasma();
                 }
             };
 
             recognition.onerror = (event) => {
                 console.error("Error de reconocimiento:", event.error);
-                if (scanning) {
-                    setTimeout(iniciarReconocimientoVoz, 1000);
+                // Si el error es 'no-speech' o 'network', intentamos reiniciar sutilmente
+                if (scanning && (event.error === 'no-speech' || event.error === 'network')) {
+                    addLog('VOZ: Reajustando sensores de audio...', 'info');
+                    try { recognition.stop(); } catch(e){} // Asegurar parada
+                    // El onend se encargará de reiniciar
+                } else if (scanning) {
+                    addLog(`VOZ: Error crítico (${event.error}). Reiniciando...`, 'error');
                 }
             };
 
             recognition.onend = () => {
+                // Reiniciar automáticamente mientras escaneamos
                 if (scanning) {
-                    recognition.start();
+                    try { recognition.start(); } catch(e) {}
                 }
             };
 
-            recognition.start();
-            logs.innerHTML = `<div>[SISTEMA] Detección de audio activa 24h.</div>` + logs.innerHTML;
+            try {
+                recognition.start();
+                addLog(`SISTEMA: Detección de audio activa 24h. Di 'Pericot'.`);
+            } catch(e) {
+                addLog('ERROR: No se pudo iniciar el micrófono. Revisa los permisos HTTPS.', 'error');
+                console.error(e);
+            }
         }
 
-        // Función para el evento del fantasma
         function activarEventoFantasma() {
             if (ghostTimeout) clearTimeout(ghostTimeout);
 
-            logs.innerHTML = `<div>[ALERTA] Anomalía clase Pericot programada (T-10s).</div>` + logs.innerHTML;
+            addLog(`ALERTA: Anomalía Pericot programada (T-10s).`, 'warn');
 
             // Esperar 10 segundos
             ghostTimeout = setTimeout(() => {
                 if (!scanning) return;
 
-                logs.innerHTML = `<div>[CRÍTICO] Manifestación visual detectada.</div>` + logs.innerHTML;
+                addLog(`CRÍTICO: Manifestación visual detectada.`, 'crit');
                 
                 // Mostrar el rostro (image_5.png)
-                ghostFace.classList.add('show');
+                if (ghostFace) {
+                    ghostFace.classList.add('show');
+                } else {
+                    addLog('ERROR: Imagen rostro.png no encontrada.', 'error');
+                }
 
-                // Ocultarlo después de 5 segundos (un poco más para apreciar la imagen)
+                // Ocultarlo después de 5 segundos
                 setTimeout(() => {
-                    ghostFace.classList.remove('show');
+                    if (ghostFace) {
+                        ghostFace.classList.remove('show');
+                    }
                 }, 5000);
 
             }, 10000); // 10 segundos
@@ -180,51 +209,49 @@
         btn.addEventListener('click', async () => {
             if (!scanning) {
                 try {
+                    // Pedir permisos explicitamente en el móvil
                     stream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: { exact: "environment" } }, 
                         audio: true 
                     });
                     video.srcObject = stream;
+                    
+                    // Asegurar autoplay en móviles
+                    video.play().catch(e => addLog('CÁMARA: Permiso de video diferido.', 'warn'));
+                    
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
                     
-                    // Iniciar sombra original (AHORA SIEMPRE ACTIVA)
+                    // Iniciar sombra original
                     moverSombra();
                     
-                    // Iniciar detección de voz (AHORA SIEMPRE ACTIVA)
+                    // Iniciar detección de voz
                     iniciarReconocimientoVoz();
                     
                     timer = setInterval(() => {
-                        // El valor EMF ahora siempre oscila en el rango alto (anomalía simulada)
                         const base = 35; 
                         const val = (base + Math.random() * 15).toFixed(2);
                         
                         document.getElementById('emf-value').innerText = `${val} μT`;
                         
-                        // Siempre se considera anomalía si supera 38, sin importar la hora
                         if(val > 38) {
                             document.getElementById('radar').classList.add('radar-active');
-                            logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ANOMALÍA: ${val} μT</div>` + logs.innerHTML;
+                            logs.innerHTML = `<div style="color: #00ff41">[${new Date().toLocaleTimeString()}] ANOMALÍA: ${val} μT</div>` + logs.innerHTML;
                         } else {
                             document.getElementById('radar').classList.remove('radar-active');
                         }
                     }, 1000);
                 } catch (e) { 
-                    alert("Error: Cámara trasera y Micrófono requeridos."); 
+                    addLog(`ERROR: Cámara/Micrófono denegados o HTTPS requerido.`, 'error');
                     console.error(e);
                 }
             } else {
                 if (stream) stream.getTracks().forEach(t => t.stop());
+                if (video) video.srcObject = null;
+                
                 clearInterval(timer);
                 
-                if (recognition) recognition.stop();
+                if (recognition) {
+                    try { recognition.stop(); } catch(e){}
+                }
                 if (ghostTimeout) clearTimeout(ghostTimeout);
-                ghostFace.classList.remove('show');
-                
-                btn.innerText = "INICIAR ESCANEO";
-                scanning = false;
-            }
-        });
-    </script>
-</body>
-</html>
