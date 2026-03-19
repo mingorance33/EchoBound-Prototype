@@ -9,13 +9,38 @@
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
+        
+        /* Sombra original circular */
         #shadow { position: fixed; width: 150px; height: 150px; background-color: rgba(0, 0, 0, 0.6); border-radius: 50%; filter: blur(25px); z-index: 5; display: none; pointer-events: none; }
+        
+        /* --- NUEVO ESTILO PARA EL ROSTRO FANTASMAL --- */
+        #ghost-face {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%) scale(0.8); /* Centrado, un poco más pequeño al inicio */
+            max-width: 80%; /* No ocupa toda la pantalla */
+            max-height: 80%;
+            opacity: 0;
+            z-index: 10; /* Por encima de todo */
+            pointer-events: none;
+            transition: opacity 2s ease-in-out, transform 3s ease-out; /* Transición suave de aparición */
+            filter: grayscale(1) contrast(1.2) brightness(0.8) blur(2px); /* Efecto fantasmal */
+        }
+        
+        /* Clase que se aplica para mostrarlo */
+        #ghost-face.show {
+            opacity: 0.6; /* Un poco transparente */
+            transform: translate(-50%, -50%) scale(1); /* Vuelve a tamaño normal */
+        }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center h-screen text-center">
 
     <video id="video" autoplay playsinline></video>
     <div id="shadow"></div>
+    
+    <img id="ghost-face" src="rostro.png" alt="Fantasmal">
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
 
@@ -40,8 +65,14 @@
     <script>
         const btn = document.getElementById('btn');
         const shadow = document.getElementById('shadow');
+        const ghostFace = document.getElementById('ghost-face'); // Nuevo
+        const logs = document.getElementById('logs'); // Referencia que faltaba
         let scanning = false, stream = null, timer = null;
         let config = { horaInicio: 0, horaFin: 5 }; // Valores por defecto
+        
+        // --- NUEVAS VARIABLES PARA RECONOCIMIENTO DE VOZ ---
+        let recognition = null;
+        let ghostTimeout = null;
 
         // Cargar configuración externa
         async function cargarConfig() {
@@ -52,49 +83,112 @@
         }
         cargarConfig();
 
-       function esHorarioActivo() {
-    const ahora = new Date();
-    const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
-    return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
-}
+        function esHorarioActivo() {
+            const ahora = new Date();
+            const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
+            return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
+        }
 
-      function moverSombra() {
-    if (!scanning || !esHorarioActivo()) return;
+        // Función original de movimiento de sombra circular
+        function moverSombra() {
+            if (!scanning || !esHorarioActivo()) return;
 
-    // 1. Definimos los posibles puntos de entrada/salida (bordes)
-    const puntos = [
-        { x: -200, y: Math.random() * window.innerHeight }, // Izquierda
-        { x: window.innerWidth + 200, y: Math.random() * window.innerHeight }, // Derecha
-        { x: Math.random() * window.innerWidth, y: -200 }, // Arriba
-        { x: Math.random() * window.innerWidth, y: window.innerHeight + 200 } // Abajo
-    ];
+            const puntos = [
+                { x: -200, y: Math.random() * window.innerHeight },
+                { x: window.innerWidth + 200, y: Math.random() * window.innerHeight },
+                { x: Math.random() * window.innerWidth, y: -200 },
+                { x: Math.random() * window.innerWidth, y: window.innerHeight + 200 }
+            ];
 
-    // 2. Elegimos al azar un punto de origen y uno de destino (que no sea el mismo lado)
-    let inicio = puntos[Math.floor(Math.random() * puntos.length)];
-    let destino = puntos[Math.floor(Math.random() * puntos.length)];
-    
-    // Aseguramos que no sea el mismo punto para que siempre haya movimiento
-    while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
+            let inicio = puntos[Math.floor(Math.random() * puntos.length)];
+            let destino = puntos[Math.floor(Math.random() * puntos.length)];
+            
+            while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
 
-    // 3. Aplicamos estilo inicial
-    shadow.style.transition = "none";
-    shadow.style.display = 'block';
-    shadow.style.left = inicio.x + 'px';
-    shadow.style.top = inicio.y + 'px';
+            shadow.style.transition = "none";
+            shadow.style.display = 'block';
+            shadow.style.left = inicio.x + 'px';
+            shadow.style.top = inicio.y + 'px';
 
-    // 4. Animación fluida
-    setTimeout(() => {
-        shadow.style.transition = `all ${4 + Math.random() * 4}s linear`; // Duración variable para más realismo
-        shadow.style.left = destino.x + 'px';
-        shadow.style.top = destino.y + 'px';
-    }, 50);
+            setTimeout(() => {
+                shadow.style.transition = `all ${4 + Math.random() * 4}s linear`;
+                shadow.style.left = destino.x + 'px';
+                shadow.style.top = destino.y + 'px';
+            }, 50);
 
-    // 5. Ocultar y reprogramar
-    setTimeout(() => {
-        shadow.style.display = 'none';
-        setTimeout(moverSombra, 8000 + Math.random() * 12000); // Intervalo variable
-    }, 8000); // Debe ser mayor al tiempo de la transición
-}
+            setTimeout(() => {
+                shadow.style.display = 'none';
+                setTimeout(moverSombra, 8000 + Math.random() * 12000);
+            }, 8000);
+        }
+
+        // --- NUEVA FUNCIÓN PARA INICIAR EL RECONOCIMIENTO DE VOZ ---
+        function iniciarReconocimientoVoz() {
+            if (!('webkitSpeechRecognition' in window)) {
+                logs.innerHTML = `<div>[ERROR] Reconocimiento de voz no soportado en este navegador.</div>` + logs.innerHTML;
+                return;
+            }
+
+            recognition = new webkitSpeechRecognition();
+            recognition.continuous = true; // Escucha continua
+            recognition.interimResults = false; // Solo resultados finales
+            recognition.lang = 'es-ES'; // Idioma español
+
+            recognition.onresult = (event) => {
+                const result = event.results[event.results.length - 1];
+                const transcript = result[0].transcript.trim().toLowerCase();
+                
+                // Registro técnico en el log
+                logs.innerHTML = `<div>[VOZ] Audio procesado...</div>` + logs.innerHTML;
+
+                if (transcript.includes('pericot')) {
+                    logs.innerHTML = `<div>[SISTEMA] Palabra clave 'Pericot' detectada.</div>` + logs.innerHTML;
+                    activarEventoFantasma();
+                }
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Error de reconocimiento:", event.error);
+                if (scanning) {
+                    // Intenta reiniciar si hay un error y seguimos escaneando
+                    setTimeout(iniciarReconocimientoVoz, 1000);
+                }
+            };
+
+            recognition.onend = () => {
+                if (scanning) {
+                    // Si se detiene por inactividad, reinicia mientras escaneamos
+                    recognition.start();
+                }
+            };
+
+            recognition.start();
+            logs.innerHTML = `<div>[SISTEMA] Detección de audio activa.</div>` + logs.innerHTML;
+        }
+
+        // --- NUEVA FUNCIÓN PARA EL EVENTO DEL FANTASMA ---
+        function activarEventoFantasma() {
+            // Cancelar cualquier timeout previo si ya se dijo "Pericot"
+            if (ghostTimeout) clearTimeout(ghostTimeout);
+
+            logs.innerHTML = `<div>[ALERTA] Anomalía programada en T-10s.</div>` + logs.innerHTML;
+
+            // Esperar 10 segundos
+            ghostTimeout = setTimeout(() => {
+                if (!scanning) return; // Si detuvieron el escaneo, no mostrar nada
+
+                logs.innerHTML = `<div>[CRÍTICO] Manifestación visual detectada.</div>` + logs.innerHTML;
+                
+                // Mostrar el rostro
+                ghostFace.classList.add('show');
+
+                // Ocultarlo después de 4 segundos
+                setTimeout(() => {
+                    ghostFace.classList.remove('show');
+                }, 4000);
+
+            }, 10000); // 10000 ms = 10 segundos
+        }
 
         document.getElementById('btn-help').addEventListener('click', () => {
             document.getElementById('help-modal').style.display = 'flex';
@@ -103,6 +197,7 @@
         btn.addEventListener('click', async () => {
             if (!scanning) {
                 try {
+                    // Pedir audio también para la detección de voz
                     stream = await navigator.mediaDevices.getUserMedia({ 
                         video: { facingMode: { exact: "environment" } }, 
                         audio: true 
@@ -110,7 +205,12 @@
                     video.srcObject = stream;
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
+                    
+                    // Iniciar sombra original
                     moverSombra();
+                    
+                    // Iniciar detección de voz
+                    iniciarReconocimientoVoz();
                     
                     timer = setInterval(() => {
                         const activo = esHorarioActivo();
@@ -126,10 +226,19 @@
                             document.getElementById('radar').classList.remove('radar-active');
                         }
                     }, 1000);
-                } catch (e) { alert("Error: Cámara trasera requerida."); }
+                } catch (e) { 
+                    alert("Error: Cámara trasera y Micrófono requeridos."); 
+                    console.error(e);
+                }
             } else {
                 if (stream) stream.getTracks().forEach(t => t.stop());
                 clearInterval(timer);
+                
+                // Detener reconocimiento de voz
+                if (recognition) recognition.stop();
+                if (ghostTimeout) clearTimeout(ghostTimeout);
+                ghostFace.classList.remove('show'); // Asegurar que el rostro desaparezca
+                
                 btn.innerText = "INICIAR ESCANEO";
                 scanning = false;
             }
