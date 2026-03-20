@@ -25,21 +25,37 @@
             z-index: -1; 
         }
 
-        /* Configuración para la imagen del rostro */
+        /* Configuración para el rostro ESTÁTICO y CENTRADO */
         #shadow { 
             position: fixed; 
-            width: 250px; 
-            height: 250px; 
+            /* Centrado absoluto */
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%); /* Ajuste perfecto del centro */
+            
+            /* Tamaño de la aparición */
+            width: 80vw; /* 80% del ancho de la ventana */
+            height: 80vw; /* Mantenemos proporción cuadrada */
+            max-width: 400px; /* Tamaño máximo en pantallas grandes */
+            max-height: 400px;
+
             background-image: url('rostro.png');
             background-size: contain;
             background-repeat: no-repeat;
             background-position: center;
-            /* El blur y la opacidad baja le dan el toque fantasmal */
-            filter: blur(15px) grayscale(1); 
-            opacity: 0.6;
+            
+            /* Efectos visuales: un poco menos blur para que se distinga, pero fantasmal */
+            filter: blur(8px) grayscale(1) brightness(0.7); 
+            
+            /* Opacidad inicial a 0 para la transición */
+            opacity: 0;
+            
             z-index: 5; 
-            display: none; 
-            pointer-events: none; 
+            display: none; /* Se activa con JS */
+            pointer-events: none; /* No interfiere con los clics */
+            
+            /* Transición suave de opacidad */
+            transition: opacity 3s ease-in-out;
         }
 
         .radar-active { 
@@ -59,6 +75,7 @@
 <body class="flex flex-col items-center justify-center h-screen text-center">
 
     <video id="video" autoplay playsinline></video>
+    
     <div id="shadow"></div>
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
@@ -92,7 +109,7 @@
         const video = document.getElementById('video');
         
         let scanning = false, stream = null, timer = null;
-        let config = { horaInicio: 21.0, horaFin: 21.05 }; // Valores de tu config.json
+        let config = { horaInicio: 21.0, horaFin: 21.05 }; // Tus valores de config.json
 
         async function cargarConfig() {
             try {
@@ -110,40 +127,46 @@
             return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
         }
 
-        function moverSombra() {
+        // NUEVA FUNCIÓN: Lógica de aparición estática
+        function gestionarAparicionRostro() {
             if (!scanning || !esHorarioActivo()) {
-                shadow.style.display = 'none';
+                ocultarRostroInmediato();
                 return;
             }
 
-            const puntos = [
-                { x: -300, y: Math.random() * window.innerHeight },
-                { x: window.innerWidth + 300, y: Math.random() * window.innerHeight },
-                { x: Math.random() * window.innerWidth, y: -300 },
-                { x: Math.random() * window.innerWidth, y: window.innerHeight + 300 }
-            ];
+            // Decidir si aparece (aprox 30% de probabilidad cada vez que se chequea)
+            if (Math.random() < 0.3 && shadow.style.display !== 'block') {
+                mostrarRostroSutil();
+            } else if (shadow.style.display === 'block' && Math.random() < 0.2) {
+                // Si ya está, hay una probabilidad de que se vaya
+                ocultarRostroSutil();
+            }
+        }
 
-            let inicio = puntos[Math.floor(Math.random() * puntos.length)];
-            let destino = puntos[Math.floor(Math.random() * puntos.length)];
-            
-            while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
-
-            shadow.style.transition = "none";
+        function mostrarRostroSutil() {
             shadow.style.display = 'block';
-            shadow.style.left = inicio.x + 'px';
-            shadow.style.top = inicio.y + 'px';
-
+            // Pequeño timeout para que el navegador note el display block antes de cambiar opacidad
             setTimeout(() => {
-                const duracion = 5 + Math.random() * 5;
-                shadow.style.transition = `all ${duracion}s linear`;
-                shadow.style.left = destino.x + 'px';
-                shadow.style.top = destino.y + 'px';
+                shadow.style.opacity = '0.6'; // Brillo fantasmal
             }, 50);
+        }
 
+        function ocultarRostroSutil() {
+            shadow.style.opacity = '0';
+            // Esperar a que termine la transición de CSS (3s) para poner display none
             setTimeout(() => {
-                shadow.style.display = 'none';
-                if(scanning) setTimeout(moverSombra, 5000 + Math.random() * 10000);
-            }, 10000); 
+                if (shadow.style.opacity === '0') {
+                    shadow.style.display = 'none';
+                }
+            }, 3000);
+        }
+
+        function ocultarRostroInmediato() {
+            shadow.style.transition = 'none';
+            shadow.style.opacity = '0';
+            shadow.style.display = 'none';
+            // Restaurar transición
+            setTimeout(() => shadow.style.transition = 'opacity 3s ease-in-out', 50);
         }
 
         document.getElementById('btn-help').addEventListener('click', () => {
@@ -161,8 +184,8 @@
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
                     
-                    // Iniciar aparición de la imagen
-                    moverSombra();
+                    // Ocultar cualquier rastro previo
+                    ocultarRostroInmediato();
                     
                     timer = setInterval(() => {
                         const activo = esHorarioActivo();
@@ -171,6 +194,9 @@
                         
                         document.getElementById('emf-value').innerText = `${val} μT`;
                         
+                        // Gestionar la aparición aleatoria del rostro quieto
+                        gestionarAparicionRostro();
+                        
                         if(activo && val > 38) {
                             document.getElementById('radar').classList.add('radar-active');
                             const time = new Date().toLocaleTimeString();
@@ -178,7 +204,7 @@
                         } else {
                             document.getElementById('radar').classList.remove('radar-active');
                         }
-                    }, 1000);
+                    }, 2000); // Chequeamos cada 2 segundos para no saturar
                 } catch (e) { 
                     alert("Se requiere acceso a la cámara y audio para operar el escáner."); 
                 }
@@ -187,7 +213,7 @@
                 clearInterval(timer);
                 btn.innerText = "INICIAR ESCANEO";
                 scanning = false;
-                shadow.style.display = 'none';
+                ocultarRostroInmediato();
             }
         });
     </script>
