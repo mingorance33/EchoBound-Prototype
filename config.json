@@ -1,2 +1,6 @@
-{ "horaInicio": 21.0, "horaFin": 21.05 }
+{ 
+  "horaInicio": 11.0, 
+  "horaFin": 21.05,
+  "mostrarSombras": true
+}
 
