@@ -40,61 +40,70 @@
     <script>
         const btn = document.getElementById('btn');
         const shadow = document.getElementById('shadow');
+        const logs = document.getElementById('logs');
+        const video = document.getElementById('video');
         let scanning = false, stream = null, timer = null;
-        let config = { horaInicio: 0, horaFin: 5 }; // Valores por defecto
+        
+        // Valores por defecto incluyendo la nueva opción
+        let config = { horaInicio: 0, horaFin: 24, mostrarSombras: true }; 
 
         // Cargar configuración externa
         async function cargarConfig() {
             try {
                 const response = await fetch('config.json');
-                if (response.ok) config = await response.json();
-            } catch (e) { console.log("Usando configuración local por defecto."); }
+                if (response.ok) {
+                    config = await response.json();
+                    console.log("Configuración cargada:", config);
+                }
+            } catch (e) { 
+                console.log("Usando configuración local por defecto."); 
+            }
         }
         cargarConfig();
 
-       function esHorarioActivo() {
-    const ahora = new Date();
-    const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
-    return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
-}
+        function esHorarioActivo() {
+            const ahora = new Date();
+            const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
+            return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
+        }
 
-      function moverSombra() {
-    if (!scanning || !esHorarioActivo()) return;
+        function moverSombra() {
+            // Nueva validación: Verifica si mostrarSombras está activo en el JSON
+            if (!scanning || !esHorarioActivo() || config.mostrarSombras === false) {
+                shadow.style.display = 'none';
+                return;
+            }
 
-    // 1. Definimos los posibles puntos de entrada/salida (bordes)
-    const puntos = [
-        { x: -200, y: Math.random() * window.innerHeight }, // Izquierda
-        { x: window.innerWidth + 200, y: Math.random() * window.innerHeight }, // Derecha
-        { x: Math.random() * window.innerWidth, y: -200 }, // Arriba
-        { x: Math.random() * window.innerWidth, y: window.innerHeight + 200 } // Abajo
-    ];
+            const puntos = [
+                { x: -200, y: Math.random() * window.innerHeight },
+                { x: window.innerWidth + 200, y: Math.random() * window.innerHeight },
+                { x: Math.random() * window.innerWidth, y: -200 },
+                { x: Math.random() * window.innerWidth, y: window.innerHeight + 200 }
+            ];
 
-    // 2. Elegimos al azar un punto de origen y uno de destino (que no sea el mismo lado)
-    let inicio = puntos[Math.floor(Math.random() * puntos.length)];
-    let destino = puntos[Math.floor(Math.random() * puntos.length)];
-    
-    // Aseguramos que no sea el mismo punto para que siempre haya movimiento
-    while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
+            let inicio = puntos[Math.floor(Math.random() * puntos.length)];
+            let destino = puntos[Math.floor(Math.random() * puntos.length)];
+            
+            while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
 
-    // 3. Aplicamos estilo inicial
-    shadow.style.transition = "none";
-    shadow.style.display = 'block';
-    shadow.style.left = inicio.x + 'px';
-    shadow.style.top = inicio.y + 'px';
+            shadow.style.transition = "none";
+            shadow.style.display = 'block';
+            shadow.style.left = inicio.x + 'px';
+            shadow.style.top = inicio.y + 'px';
 
-    // 4. Animación fluida
-    setTimeout(() => {
-        shadow.style.transition = `all ${4 + Math.random() * 4}s linear`; // Duración variable para más realismo
-        shadow.style.left = destino.x + 'px';
-        shadow.style.top = destino.y + 'px';
-    }, 50);
+            setTimeout(() => {
+                shadow.style.transition = `all ${4 + Math.random() * 4}s linear`;
+                shadow.style.left = destino.x + 'px';
+                shadow.style.top = destino.y + 'px';
+            }, 50);
 
-    // 5. Ocultar y reprogramar
-    setTimeout(() => {
-        shadow.style.display = 'none';
-        setTimeout(moverSombra, 8000 + Math.random() * 12000); // Intervalo variable
-    }, 8000); // Debe ser mayor al tiempo de la transición
-}
+            setTimeout(() => {
+                shadow.style.display = 'none';
+                if (scanning) {
+                    setTimeout(moverSombra, 8000 + Math.random() * 12000);
+                }
+            }, 8000);
+        }
 
         document.getElementById('btn-help').addEventListener('click', () => {
             document.getElementById('help-modal').style.display = 'flex';
@@ -110,6 +119,8 @@
                     video.srcObject = stream;
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
+                    
+                    // Inicia el ciclo de sombras si la configuración lo permite
                     moverSombra();
                     
                     timer = setInterval(() => {
@@ -126,12 +137,15 @@
                             document.getElementById('radar').classList.remove('radar-active');
                         }
                     }, 1000);
-                } catch (e) { alert("Error: Cámara trasera requerida."); }
+                } catch (e) { 
+                    alert("Error: Cámara trasera requerida."); 
+                }
             } else {
                 if (stream) stream.getTracks().forEach(t => t.stop());
                 clearInterval(timer);
                 btn.innerText = "INICIAR ESCANEO";
                 scanning = false;
+                shadow.style.display = 'none';
             }
         });
     </script>
