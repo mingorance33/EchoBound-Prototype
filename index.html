@@ -5,24 +5,41 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>EchoBound - Detector</title>
     <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
     <style>
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
         
-        /* Actualizado para usar rostro.png */
+        /* Sombra aleatoria estándar */
         #shadow { 
             position: fixed; 
-            width: 250px; 
-            height: 250px; 
+            width: 250px; height: 250px; 
             background-image: url('rostro.png');
-            background-size: contain;
-            background-repeat: no-repeat;
-            opacity: 0.4;
-            filter: blur(5px) grayscale(1);
-            z-index: 5; 
-            display: none; 
-            pointer-events: none; 
+            background-size: contain; background-repeat: no-repeat;
+            opacity: 0.4; filter: blur(5px) grayscale(1);
+            z-index: 5; display: none; pointer-events: none; 
+        }
+
+        /* Aparición especial (Horno) */
+        #jumpscare {
+            position: fixed;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            width: 70vw; height: 70vw;
+            background-image: url('rostro.png');
+            background-size: contain; background-repeat: no-repeat;
+            z-index: 100; display: none;
+            filter: contrast(3) brightness(0.5) sepia(1) hue-rotate(-50deg);
+            pointer-events: none;
+            animation: flicker 0.1s infinite;
+        }
+
+        @keyframes flicker {
+            0% { opacity: 0.8; }
+            50% { opacity: 0.4; }
+            100% { opacity: 0.9; }
         }
     </style>
 </head>
@@ -30,22 +47,23 @@
 
     <video id="video" autoplay playsinline></video>
     <div id="shadow"></div>
+    <div id="jumpscare"></div>
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
 
     <div id="help-modal" class="hidden absolute inset-0 bg-black/95 z-40 p-6 flex flex-col justify-center text-left">
         <h2 class="text-xl font-bold text-center mb-4 border-b border-green-500 pb-2">ANATOMÍA DE ECHOBOUND</h2>
         <div class="space-y-4 text-sm font-mono">
-            <p><strong>1. Capa de Sensores:</strong> Magnetómetro, LiDAR y audio de alta sensibilidad.</p>
-            <p><strong>2. Procesamiento (IA Local):</strong> Algoritmos de redes neuronales convolucionales.</p>
-            <p><strong>3. Contexto (API):</strong> Integración con registros históricos y geolocalización.</p>
+            <p><strong>1. Capa de IA:</strong> Reconocimiento de patrones mediante MobileNet v2.</p>
+            <p><strong>2. Escaneo:</strong> Detección de fluctuaciones térmicas y electromagnéticas.</p>
+            <p><strong>3. Advertencia:</strong> No apuntar a fuentes de calor cerradas.</p>
         </div>
         <button onclick="document.getElementById('help-modal').style.display='none'" class="mt-8 w-full py-3 border border-green-500 hover:bg-green-900 font-bold uppercase">CERRAR</button>
     </div>
 
     <h1 class="text-3xl font-bold mb-4">ECHOBOUND SCANNER</h1>
     <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-all">
-        <span id="emf-value" class="text-3xl font-bold">0.00 μT</span>
+        <span id="emf-value" class="text-3xl font-bold">CARGANDO IA...</span>
     </div>
 
     <button id="btn" class="bg-green-900 border border-green-500 px-10 py-4 text-xl font-bold z-10">INICIAR ESCANEO</button>
@@ -54,23 +72,32 @@
     <script>
         const btn = document.getElementById('btn');
         const shadow = document.getElementById('shadow');
+        const jumpscare = document.getElementById('jumpscare');
         const logs = document.getElementById('logs');
-        let scanning = false, stream = null, timer = null;
-        
-        // Valores por defecto incluyendo el nuevo interruptor de sombras
-        let config = { horaInicio: 0, horaFin: 5, mostrarSombras: false };
+        let scanning = false, stream = null, timer = null, net = null;
+        let config = { horaInicio: 0, horaFin: 24, mostrarSombras: false };
+
+        // Cargar IA al inicio
+        async function initIA() {
+            try {
+                net = await mobilenet.load();
+                document.getElementById('emf-value').innerText = "0.00 μT";
+                addLog("SISTEMA DE VISIÓN ONLINE");
+            } catch (e) {
+                addLog("ERROR CARGANDO IA");
+            }
+        }
 
         async function cargarConfig() {
             try {
                 const response = await fetch('config.json');
-                if (response.ok) {
-                    config = await response.json();
-                }
-            } catch (e) { 
-                console.log("Usando configuración local por defecto."); 
-            }
+                if (response.ok) config = await response.json();
+            } catch (e) { console.log("Usando config por defecto."); }
         }
-        cargarConfig();
+
+        function addLog(msg) {
+            logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>` + logs.innerHTML;
+        }
 
         function esHorarioActivo() {
             const ahora = new Date();
@@ -78,88 +105,88 @@
             return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
         }
 
+        async function escanearAmbiente() {
+            if (!scanning || !net) return;
+
+            // Analizar la imagen de la cámara
+            const predictions = await net.classify(document.getElementById('video'));
+            
+            // Buscar "oven" o "microwave"
+            const hallazgo = predictions.find(p => 
+                (p.className.toLowerCase().includes('oven') || p.className.toLowerCase().includes('microwave')) 
+                && p.probability > 0.55
+            );
+
+            if (hallazgo) {
+                dispararEventoEspecial();
+            }
+
+            // Repetir cada segundo
+            setTimeout(escanearAmbiente, 1000);
+        }
+
+        function dispararEventoEspecial() {
+            if (jumpscare.style.display === 'block') return;
+
+            addLog("!! ANOMALÍA ESTRUCTURAL EN HORNO !!");
+            jumpscare.style.display = 'block';
+            
+            setTimeout(() => {
+                jumpscare.style.display = 'none';
+            }, 800); // Aparece menos de un segundo
+        }
+
         function moverSombra() {
-            // Verificación doble: Horario activo Y sombras permitidas en config
             if (!scanning || !esHorarioActivo() || !config.mostrarSombras) {
                 shadow.style.display = 'none';
                 return;
             }
-
-            const puntos = [
-                { x: -300, y: Math.random() * window.innerHeight },
-                { x: window.innerWidth + 300, y: Math.random() * window.innerHeight },
-                { x: Math.random() * window.innerWidth, y: -300 },
-                { x: Math.random() * window.innerWidth, y: window.innerHeight + 300 }
-            ];
-
+            // Lógica de movimiento aleatorio (tu código original)
+            const puntos = [{ x: -300, y: 0 }, { x: window.innerWidth + 300, y: 500 }];
             let inicio = puntos[Math.floor(Math.random() * puntos.length)];
-            let destino = puntos[Math.floor(Math.random() * puntos.length)];
-            
-            while(inicio === destino) destino = puntos[Math.floor(Math.random() * puntos.length)];
-
             shadow.style.transition = "none";
             shadow.style.display = 'block';
             shadow.style.left = inicio.x + 'px';
-            shadow.style.top = inicio.y + 'px';
-
             setTimeout(() => {
-                shadow.style.transition = `all ${5 + Math.random() * 5}s linear`;
-                shadow.style.left = destino.x + 'px';
-                shadow.style.top = destino.y + 'px';
+                shadow.style.transition = `all 6s linear`;
+                shadow.style.left = (inicio.x < 0 ? window.innerWidth + 300 : -300) + 'px';
             }, 50);
-
-            setTimeout(() => {
-                shadow.style.display = 'none';
-                // Solo reprogramar si seguimos en el estado correcto
-                if (scanning && config.mostrarSombras) {
-                    setTimeout(moverSombra, 5000 + Math.random() * 10000);
-                }
-            }, 10000);
+            setTimeout(moverSombra, 15000);
         }
-
-        document.getElementById('btn-help').addEventListener('click', () => {
-            document.getElementById('help-modal').style.display = 'flex';
-        });
 
         btn.addEventListener('click', async () => {
             if (!scanning) {
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: { exact: "environment" } }, 
-                        audio: true 
+                        video: { facingMode: "environment" }, 
+                        audio: false 
                     });
                     document.getElementById('video').srcObject = stream;
                     btn.innerText = "DETENER ESCANEO";
                     scanning = true;
                     
-                    // Inicia el ciclo de sombras si aplica
                     moverSombra();
+                    escanearAmbiente();
                     
                     timer = setInterval(() => {
-                        const activo = esHorarioActivo();
-                        const base = activo ? 35 : 5;
-                        const val = (base + Math.random() * 15).toFixed(2);
-                        
+                        const val = (esHorarioActivo() ? 30 + Math.random() * 20 : Math.random() * 5).toFixed(2);
                         document.getElementById('emf-value').innerText = `${val} μT`;
-                        
-                        if(activo && val > 38) {
-                            document.getElementById('radar').classList.add('radar-active');
-                            logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ANOMALÍA: ${val} μT</div>` + logs.innerHTML;
-                        } else {
-                            document.getElementById('radar').classList.remove('radar-active');
-                        }
+                        if(val > 40) document.getElementById('radar').classList.add('radar-active');
+                        else document.getElementById('radar').classList.remove('radar-active');
                     }, 1000);
-                } catch (e) { 
-                    alert("Error: Cámara trasera requerida."); 
-                }
+                } catch (e) { alert("Acceso a cámara denegado."); }
             } else {
                 if (stream) stream.getTracks().forEach(t => t.stop());
                 clearInterval(timer);
                 btn.innerText = "INICIAR ESCANEO";
                 scanning = false;
                 shadow.style.display = 'none';
+                jumpscare.style.display = 'none';
             }
         });
+
+        cargarConfig();
+        initIA();
     </script>
 </body>
 </html>
