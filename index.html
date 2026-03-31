@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EchoBound - Detector Específico</title>
+    <title>EchoBound - Detector de Precisión</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js"></script>
     <style>
@@ -11,28 +11,25 @@
         #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.2; filter: grayscale(1) contrast(1.2); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
         
-        /* Lienzo oculto para procesar video */
         #canvas-process { display: none; }
 
-        /* Aparición especial (En el centro del horno detectado) */
         #jumpscare {
             position: fixed;
             top: 50%; left: 50%;
-            transform: translate(-50%, -50%) scale(0.5);
-            width: 80vw; height: 80vw;
+            transform: translate(-50%, -50%);
+            width: 90vw; height: 90vw;
             background-image: url('rostro.png');
             background-size: contain; background-repeat: no-repeat; background-position: center;
             z-index: 100; display: none;
-            filter: contrast(4) brightness(0.4) sepia(1) hue-rotate(-50deg);
+            filter: contrast(4) brightness(0.5) sepia(1) hue-rotate(-50deg);
             pointer-events: none;
-            opacity: 0;
-            transition: opacity 0.1s ease-in;
         }
 
-        @keyframes scream {
-            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.8; }
-            50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; filter: contrast(5) brightness(0.6) sepia(1) hue-rotate(-50deg); }
-            100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        @keyframes scream-anim {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0; }
+            20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+            80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+            100% { transform: translate(-50%, -50%) scale(1.5); opacity: 0; }
         }
     </style>
 </head>
@@ -42,11 +39,9 @@
     <canvas id="canvas-process"></canvas>
     <div id="jumpscare"></div>
 
-    <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
-
     <h1 class="text-3xl font-bold mb-4">ECHOBOUND SCANNER</h1>
-    <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-all">
-        <span id="emf-value" class="text-3xl font-bold">CALIBRANDO...</span>
+    <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6">
+        <span id="emf-value" class="text-3xl font-bold">INICIALIZANDO</span>
     </div>
 
     <button id="btn" class="bg-green-900 border border-green-500 px-10 py-4 text-xl font-bold z-10">INICIAR ESCANEO</button>
@@ -60,134 +55,91 @@
         const canvas = document.getElementById('canvas-process');
         const ctx = canvas.getContext('2d');
 
-        let scanning = false, stream = null, timer = null;
-        
-        // Configuración de Visión Computacional
-        let imgRef = new Image();
-        imgRef.src = 'horno.jpg'; // LA FOTO QUE SUBIRÁS
-        
-        let refCorners, refDescriptors;
-        let screenCorners, screenDescriptors;
-        let matchMask;
-        let numRefMatches = 0;
-        
-        const maxFeatures = 500;
-        const matchThreshold = 30; // Mínimo de puntos coincidentes para disparar el susto
+        let scanning = false, stream = null;
+        let corners = [];
+        let threshold = 20; // Sensibilidad de detección de textura
 
-        // Inicializar descriptores visuales
-        jsfeat.yape.set_threshold(20);
-
-        imgRef.onload = function() {
-            // Procesar imagen de referencia al cargar
-            const w = imgRef.width;
-            const h = imgRef.height;
-            canvas.width = w; canvas.height = h;
-            ctx.drawImage(imgRef, 0, 0, w, h);
-            
-            let imageData = ctx.getImageData(0, 0, w, h);
-            let img_u8 = new jsfeat.matrix_t(w, h, jsfeat.U8_t | jsfeat.C1_t);
-            jsfeat.imgproc.grayscale(imageData.data, w, h, img_u8);
-            
-            refCorners = [];
-            for(let i=0; i<maxFeatures; ++i) refCorners[i] = new jsfeat.keypoint_t();
-            
-            // Extraer puntos clave de tu foto del horno
-            numRefMatches = jsfeat.yape.detect(img_u8, refCorners, 1);
-            
-            document.getElementById('emf-value').innerText = "0.00 μT";
-            addLog("HORNO OBJETIVO CALIBRADO");
-        };
+        // Inicializar array de puntos (Keypoints)
+        for(let i=0; i<1000; ++i) corners[i] = new jsfeat.keypoint_t();
 
         function addLog(msg) {
             logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>` + logs.innerHTML;
         }
 
         async function procesarVideo() {
-            if (!scanning || !refCorners) return;
+            if (!scanning) return;
 
-            // Ajustar canvas al video actual
-            if (canvas.width !== video.videoWidth) {
-                canvas.width = video.videoWidth;
-                canvas.height = video.videoHeight;
-                screenCorners = [];
-                for(let i=0; i<maxFeatures; ++i) screenCorners[i] = new jsfeat.keypoint_t();
-            }
+            if (video.readyState === video.HAVE_ENOUGH_DATA) {
+                canvas.width = 300; // Trabajamos a baja resolución para que vuele en móvil
+                canvas.height = 300;
+                ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let img_u8 = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+                jsfeat.imgproc.grayscale(imageData.data, canvas.width, canvas.height, img_u8);
+                
+                // Usamos FAST que es más estable en JSFeat
+                jsfeat.fast_corners.set_threshold(threshold);
+                let numCorners = jsfeat.fast_corners.detect(img_u8, corners, 3);
 
-            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-            
-            let img_u8 = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
-            jsfeat.imgproc.grayscale(imageData.data, canvas.width, canvas.height, img_u8);
+                // Lógica de detección: si hay muchos puntos de textura en el centro
+                let puntosCentrales = 0;
+                for(let i=0; i < numCorners; i++) {
+                    if(corners[i].x > 100 && corners[i].x < 200 && corners[i].y > 100 && corners[i].y < 200) {
+                        puntosCentrales++;
+                    }
+                }
 
-            // Detectar puntos en la cámara en tiempo real
-            let numCorners = jsfeat.yape.detect(img_u8, screenCorners, 1);
-
-            // Comparación simple de cantidad de características en área central
-            // (Para un matching robusto se requiere descriptores ORB/FREAK, 
-            // pero para detectar UN objeto fijo específico, la densidad de puntos YAPE suele bastar
-            // y es mucho más rápido en móviles).
-            
-            let matchesCentrales = 0;
-            const centroX = canvas.width / 2;
-            const centroY = canvas.height / 2;
-            const margen = canvas.width * 0.2; // Enfocarse en el centro
-
-            for(let i=0; i<numCorners; i++) {
-                if(screenCorners[i].x > centroX - margen && screenCorners[i].x < centroX + margen &&
-                   screenCorners[i].y > centroY - margen && screenCorners[i].y < centroY + margen) {
-                    matchesCentrales++;
+                // Ajusta este número (45) según la complejidad del horno real
+                if (puntosCentrales > 45) { 
+                    lanzarSusto();
                 }
             }
-
-            // Si la densidad de puntos visuales es similar a la referencia en el centro
-            if (matchesCentrales > matchThreshold) {
-                dispararEventoEspecial();
-            }
-
             requestAnimationFrame(procesarVideo);
         }
 
-        function dispararEventoEspecial() {
+        function lanzarSusto() {
             if (jumpscare.style.display === 'block') return;
-
-            addLog("!! IDENTIDAD CONFIRMADA - PROCEDIENDO !!");
+            
+            addLog("!! PATRÓN TÉRMICO IDENTIFICADO !!");
             jumpscare.style.display = 'block';
-            jumpscare.style.animation = "scream 0.5s forwards";
+            jumpscare.style.animation = "scream-anim 0.7s forwards";
             
             setTimeout(() => {
                 jumpscare.style.display = 'none';
                 jumpscare.style.animation = "none";
-            }, 550); 
+            }, 750);
         }
 
         btn.addEventListener('click', async () => {
             if (!scanning) {
                 try {
                     stream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "environment" }, 
-                        audio: false 
+                        video: { facingMode: "environment" }
                     });
                     video.srcObject = stream;
                     btn.innerText = "DETENER";
                     scanning = true;
-                    
+                    addLog("VISIÓN ACTIVA");
                     procesarVideo();
                     
-                    timer = setInterval(() => {
-                        const val = (35 + Math.random() * 15).toFixed(2);
+                    // Simulación de EMF
+                    setInterval(() => {
+                        if(!scanning) return;
+                        const val = (Math.random() * 40 + 5).toFixed(2);
                         document.getElementById('emf-value').innerText = `${val} μT`;
-                        if(val > 42) document.getElementById('radar').classList.add('radar-active');
-                        else document.getElementById('radar').classList.remove('radar-active');
                     }, 1000);
-                } catch (e) { alert("Error de cámara."); }
+
+                } catch (e) { addLog("ERROR: CÁMARA NO DISPONIBLE"); }
             } else {
-                if (stream) stream.getTracks().forEach(t => t.stop());
-                clearInterval(timer);
-                btn.innerText = "ESCANEAR";
-                scanning = false;
-                jumpscare.style.display = 'none';
+                location.reload(); // Reinicio limpio
             }
         });
+
+        window.onload = () => {
+            document.getElementById('emf-value').innerText = "0.00 μT";
+            addLog("SISTEMA LISTO");
+        };
     </script>
 </body>
 </html>
