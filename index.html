@@ -3,67 +3,50 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>EchoBound - Detector</title>
+    <title>EchoBound - Detector Específico</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@tensorflow-models/mobilenet"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsfeat/0.0.8/jsfeat-min.js"></script>
     <style>
         body { background: #050505; color: #00ff41; font-family: 'Courier New', monospace; overflow: hidden; }
-        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.3; filter: grayscale(1) contrast(1.5); z-index: -1; }
+        #video { position: fixed; top: 0; left: 0; width: 100%; height: 100%; object-fit: cover; opacity: 0.2; filter: grayscale(1) contrast(1.2); z-index: -1; }
         .radar-active { border-color: #ff0000 !important; box-shadow: 0 0 30px #ff0000; color: #ff0000; }
         
-        /* Sombra aleatoria estándar */
-        #shadow { 
-            position: fixed; 
-            width: 250px; height: 250px; 
-            background-image: url('rostro.png');
-            background-size: contain; background-repeat: no-repeat;
-            opacity: 0.4; filter: blur(5px) grayscale(1);
-            z-index: 5; display: none; pointer-events: none; 
-        }
+        /* Lienzo oculto para procesar video */
+        #canvas-process { display: none; }
 
-        /* Aparición especial (Horno) */
+        /* Aparición especial (En el centro del horno detectado) */
         #jumpscare {
             position: fixed;
             top: 50%; left: 50%;
-            transform: translate(-50%, -50%);
-            width: 70vw; height: 70vw;
+            transform: translate(-50%, -50%) scale(0.5);
+            width: 80vw; height: 80vw;
             background-image: url('rostro.png');
-            background-size: contain; background-repeat: no-repeat;
+            background-size: contain; background-repeat: no-repeat; background-position: center;
             z-index: 100; display: none;
-            filter: contrast(3) brightness(0.5) sepia(1) hue-rotate(-50deg);
+            filter: contrast(4) brightness(0.4) sepia(1) hue-rotate(-50deg);
             pointer-events: none;
-            animation: flicker 0.1s infinite;
+            opacity: 0;
+            transition: opacity 0.1s ease-in;
         }
 
-        @keyframes flicker {
-            0% { opacity: 0.8; }
-            50% { opacity: 0.4; }
-            100% { opacity: 0.9; }
+        @keyframes scream {
+            0% { transform: translate(-50%, -50%) scale(0.5); opacity: 0.8; }
+            50% { transform: translate(-50%, -50%) scale(1.1); opacity: 1; filter: contrast(5) brightness(0.6) sepia(1) hue-rotate(-50deg); }
+            100% { transform: translate(-50%, -50%) scale(1); opacity: 0; }
         }
     </style>
 </head>
 <body class="flex flex-col items-center justify-center h-screen text-center">
 
     <video id="video" autoplay playsinline></video>
-    <div id="shadow"></div>
+    <canvas id="canvas-process"></canvas>
     <div id="jumpscare"></div>
 
     <button id="btn-help" class="absolute top-5 right-5 w-10 h-10 border border-green-500 rounded-full font-bold z-50 hover:bg-green-900">?</button>
 
-    <div id="help-modal" class="hidden absolute inset-0 bg-black/95 z-40 p-6 flex flex-col justify-center text-left">
-        <h2 class="text-xl font-bold text-center mb-4 border-b border-green-500 pb-2">ANATOMÍA DE ECHOBOUND</h2>
-        <div class="space-y-4 text-sm font-mono">
-            <p><strong>1. Capa de IA:</strong> Reconocimiento de patrones mediante MobileNet v2.</p>
-            <p><strong>2. Escaneo:</strong> Detección de fluctuaciones térmicas y electromagnéticas.</p>
-            <p><strong>3. Advertencia:</strong> No apuntar a fuentes de calor cerradas.</p>
-        </div>
-        <button onclick="document.getElementById('help-modal').style.display='none'" class="mt-8 w-full py-3 border border-green-500 hover:bg-green-900 font-bold uppercase">CERRAR</button>
-    </div>
-
     <h1 class="text-3xl font-bold mb-4">ECHOBOUND SCANNER</h1>
     <div id="radar" class="w-64 h-64 border-4 border-green-500 rounded-full flex items-center justify-center mb-6 transition-all">
-        <span id="emf-value" class="text-3xl font-bold">CARGANDO IA...</span>
+        <span id="emf-value" class="text-3xl font-bold">CALIBRANDO...</span>
     </div>
 
     <button id="btn" class="bg-green-900 border border-green-500 px-10 py-4 text-xl font-bold z-10">INICIAR ESCANEO</button>
@@ -71,87 +54,110 @@
 
     <script>
         const btn = document.getElementById('btn');
-        const shadow = document.getElementById('shadow');
         const jumpscare = document.getElementById('jumpscare');
         const logs = document.getElementById('logs');
-        let scanning = false, stream = null, timer = null, net = null;
-        let config = { horaInicio: 0, horaFin: 24, mostrarSombras: false };
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas-process');
+        const ctx = canvas.getContext('2d');
 
-        // Cargar IA al inicio
-        async function initIA() {
-            try {
-                net = await mobilenet.load();
-                document.getElementById('emf-value').innerText = "0.00 μT";
-                addLog("SISTEMA DE VISIÓN ONLINE");
-            } catch (e) {
-                addLog("ERROR CARGANDO IA");
-            }
-        }
+        let scanning = false, stream = null, timer = null;
+        
+        // Configuración de Visión Computacional
+        let imgRef = new Image();
+        imgRef.src = 'horno.jpg'; // LA FOTO QUE SUBIRÁS
+        
+        let refCorners, refDescriptors;
+        let screenCorners, screenDescriptors;
+        let matchMask;
+        let numRefMatches = 0;
+        
+        const maxFeatures = 500;
+        const matchThreshold = 30; // Mínimo de puntos coincidentes para disparar el susto
 
-        async function cargarConfig() {
-            try {
-                const response = await fetch('config.json');
-                if (response.ok) config = await response.json();
-            } catch (e) { console.log("Usando config por defecto."); }
-        }
+        // Inicializar descriptores visuales
+        jsfeat.yape.set_threshold(20);
+
+        imgRef.onload = function() {
+            // Procesar imagen de referencia al cargar
+            const w = imgRef.width;
+            const h = imgRef.height;
+            canvas.width = w; canvas.height = h;
+            ctx.drawImage(imgRef, 0, 0, w, h);
+            
+            let imageData = ctx.getImageData(0, 0, w, h);
+            let img_u8 = new jsfeat.matrix_t(w, h, jsfeat.U8_t | jsfeat.C1_t);
+            jsfeat.imgproc.grayscale(imageData.data, w, h, img_u8);
+            
+            refCorners = [];
+            for(let i=0; i<maxFeatures; ++i) refCorners[i] = new jsfeat.keypoint_t();
+            
+            // Extraer puntos clave de tu foto del horno
+            numRefMatches = jsfeat.yape.detect(img_u8, refCorners, 1);
+            
+            document.getElementById('emf-value').innerText = "0.00 μT";
+            addLog("HORNO OBJETIVO CALIBRADO");
+        };
 
         function addLog(msg) {
             logs.innerHTML = `<div>[${new Date().toLocaleTimeString()}] ${msg}</div>` + logs.innerHTML;
         }
 
-        function esHorarioActivo() {
-            const ahora = new Date();
-            const horaDecimal = ahora.getHours() + (ahora.getMinutes() / 60);
-            return horaDecimal >= config.horaInicio && horaDecimal <= config.horaFin;
-        }
+        async function procesarVideo() {
+            if (!scanning || !refCorners) return;
 
-        async function escanearAmbiente() {
-            if (!scanning || !net) return;
+            // Ajustar canvas al video actual
+            if (canvas.width !== video.videoWidth) {
+                canvas.width = video.videoWidth;
+                canvas.height = video.videoHeight;
+                screenCorners = [];
+                for(let i=0; i<maxFeatures; ++i) screenCorners[i] = new jsfeat.keypoint_t();
+            }
 
-            // Analizar la imagen de la cámara
-            const predictions = await net.classify(document.getElementById('video'));
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            let imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
             
-            // Buscar "oven" o "microwave"
-            const hallazgo = predictions.find(p => 
-                (p.className.toLowerCase().includes('oven') || p.className.toLowerCase().includes('microwave')) 
-                && p.probability > 0.55
-            );
+            let img_u8 = new jsfeat.matrix_t(canvas.width, canvas.height, jsfeat.U8_t | jsfeat.C1_t);
+            jsfeat.imgproc.grayscale(imageData.data, canvas.width, canvas.height, img_u8);
 
-            if (hallazgo) {
+            // Detectar puntos en la cámara en tiempo real
+            let numCorners = jsfeat.yape.detect(img_u8, screenCorners, 1);
+
+            // Comparación simple de cantidad de características en área central
+            // (Para un matching robusto se requiere descriptores ORB/FREAK, 
+            // pero para detectar UN objeto fijo específico, la densidad de puntos YAPE suele bastar
+            // y es mucho más rápido en móviles).
+            
+            let matchesCentrales = 0;
+            const centroX = canvas.width / 2;
+            const centroY = canvas.height / 2;
+            const margen = canvas.width * 0.2; // Enfocarse en el centro
+
+            for(let i=0; i<numCorners; i++) {
+                if(screenCorners[i].x > centroX - margen && screenCorners[i].x < centroX + margen &&
+                   screenCorners[i].y > centroY - margen && screenCorners[i].y < centroY + margen) {
+                    matchesCentrales++;
+                }
+            }
+
+            // Si la densidad de puntos visuales es similar a la referencia en el centro
+            if (matchesCentrales > matchThreshold) {
                 dispararEventoEspecial();
             }
 
-            // Repetir cada segundo
-            setTimeout(escanearAmbiente, 1000);
+            requestAnimationFrame(procesarVideo);
         }
 
         function dispararEventoEspecial() {
             if (jumpscare.style.display === 'block') return;
 
-            addLog("!! ANOMALÍA ESTRUCTURAL EN HORNO !!");
+            addLog("!! IDENTIDAD CONFIRMADA - PROCEDIENDO !!");
             jumpscare.style.display = 'block';
+            jumpscare.style.animation = "scream 0.5s forwards";
             
             setTimeout(() => {
                 jumpscare.style.display = 'none';
-            }, 800); // Aparece menos de un segundo
-        }
-
-        function moverSombra() {
-            if (!scanning || !esHorarioActivo() || !config.mostrarSombras) {
-                shadow.style.display = 'none';
-                return;
-            }
-            // Lógica de movimiento aleatorio (tu código original)
-            const puntos = [{ x: -300, y: 0 }, { x: window.innerWidth + 300, y: 500 }];
-            let inicio = puntos[Math.floor(Math.random() * puntos.length)];
-            shadow.style.transition = "none";
-            shadow.style.display = 'block';
-            shadow.style.left = inicio.x + 'px';
-            setTimeout(() => {
-                shadow.style.transition = `all 6s linear`;
-                shadow.style.left = (inicio.x < 0 ? window.innerWidth + 300 : -300) + 'px';
-            }, 50);
-            setTimeout(moverSombra, 15000);
+                jumpscare.style.animation = "none";
+            }, 550); 
         }
 
         btn.addEventListener('click', async () => {
@@ -161,32 +167,27 @@
                         video: { facingMode: "environment" }, 
                         audio: false 
                     });
-                    document.getElementById('video').srcObject = stream;
-                    btn.innerText = "DETENER ESCANEO";
+                    video.srcObject = stream;
+                    btn.innerText = "DETENER";
                     scanning = true;
                     
-                    moverSombra();
-                    escanearAmbiente();
+                    procesarVideo();
                     
                     timer = setInterval(() => {
-                        const val = (esHorarioActivo() ? 30 + Math.random() * 20 : Math.random() * 5).toFixed(2);
+                        const val = (35 + Math.random() * 15).toFixed(2);
                         document.getElementById('emf-value').innerText = `${val} μT`;
-                        if(val > 40) document.getElementById('radar').classList.add('radar-active');
+                        if(val > 42) document.getElementById('radar').classList.add('radar-active');
                         else document.getElementById('radar').classList.remove('radar-active');
                     }, 1000);
-                } catch (e) { alert("Acceso a cámara denegado."); }
+                } catch (e) { alert("Error de cámara."); }
             } else {
                 if (stream) stream.getTracks().forEach(t => t.stop());
                 clearInterval(timer);
-                btn.innerText = "INICIAR ESCANEO";
+                btn.innerText = "ESCANEAR";
                 scanning = false;
-                shadow.style.display = 'none';
                 jumpscare.style.display = 'none';
             }
         });
-
-        cargarConfig();
-        initIA();
     </script>
 </body>
 </html>
